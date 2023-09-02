@@ -1,0 +1,15 @@
+{
+  "name": "wp-how-to-get-data",
+  "version": "1.0.0",
+  "description": "Locally installed pupeteer",
+  "main": "helper-script.js",
+  "scripts": {
+    "topics": "node get-topics-node.js",
+    "youtube": "node get-youtube-data-node.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "puppeteer": "^21.1.1"
+  }
+}
