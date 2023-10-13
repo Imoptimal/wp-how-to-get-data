@@ -1,8 +1,15 @@
 // Node.js script that executes puppeteer code
-const puppeteer = require('puppeteer');
-const fs = require('fs/promises');
-const path = require('path');
+// puppeteer-extra is a drop-in replacement for puppeteer,
+// it augments the installed puppeteer with plugin functionality
+const puppeteer = require("puppeteer-extra");
+const pluginStealth = require("puppeteer-extra-plugin-stealth");
+const fs = require("fs/promises");
+const path = require("path");
 
+// Register the plugin
+puppeteer.use(pluginStealth());
+
+// Function to scroll down the page to load more videos
 async function scrollDown(page) {
   await page.evaluate(async () => {
     await new Promise((resolve, reject) => {
@@ -25,80 +32,186 @@ async function scrollDown(page) {
   });
 }
 
+// Function to clean a string for use as a file name
+function cleanFileName(name) {
+  return name
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, "") // Remove characters not allowed in file names
+    .replace(/\s+/g, "-") // Replace spaces with "-" symbol
+    .substring(0, 100); // Limit the length of the file name
+}
+
+async function scrapeByRelevance(page, query, dataFolderPath) {
+  const queryParams = `?search_query=${encodeURIComponent(query)}`;
+  const baseUrl = "https://www.youtube.com/results";
+
+  // Search by relevance
+  await page.setUserAgent(
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.88 Safari/537.36"
+  );
+  await page.goto(baseUrl + queryParams);
+
+  // Wait for the page to load and selectors to appear
+  await page.waitForSelector("ytd-video-renderer", { timeout: 60000 });
+
+  // Scroll down to load more videos
+  /*for (let j = 0; j < 2; j++) {
+    // Adjust the number of scrolls as needed
+    await scrollDown(page);
+    await page.waitForTimeout(2000); // Wait for 2 seconds after each scroll
+  }*/
+
+  const relevanceVideos = await page.evaluate(() => {
+    const videoElements = Array.from(
+      document.querySelectorAll("ytd-video-renderer")
+    );
+    return videoElements.slice(0, 5).map((videoElement) => {
+      const title = videoElement.querySelector("#video-title").textContent;
+      const link = videoElement
+        .querySelector("#video-title")
+        .getAttribute("href");
+      const description =
+        videoElement.querySelector(
+          "#dismissible > div > div.metadata-snippet-container.style-scope.ytd-video-renderer.style-scope.ytd-video-renderer > yt-formatted-string"
+        )?.textContent || "";
+      const publishDate =
+        videoElement.querySelector("#metadata-line > span:nth-child(4)")
+          ?.textContent || "";
+      return { title, link, description, publishDate };
+    });
+  });
+
+  // Store video details in a single JSON file as subobjects
+  const cleanedQuery = cleanFileName(query);
+  const combinedData = {
+    relevance: relevanceVideos,
+  };
+  const relevanceFileName = `${cleanedQuery}.json`;
+  const combinedFilePath = path.join(dataFolderPath, relevanceFileName);
+  await fs.writeFile(combinedFilePath, JSON.stringify(combinedData, null, 2));
+
+  console.log(`JSON file created for "${query}" videos by relevance.`);
+}
+
+async function scrapeByDate(page, query, dataFolderPath) {
+  const queryParams = `?search_query=${encodeURIComponent(query)}&sp=EgIIBQ%253D%253D`;
+  const baseUrl = "https://www.youtube.com/results";
+
+  // Search by date (past year)
+  await page.setUserAgent(
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.88 Safari/537.36"
+  );
+  await page.goto(baseUrl + queryParams);
+  // Wait for the page to load and selectors to appear
+
+  await page.waitForSelector("ytd-video-renderer", { timeout: 60000 });
+  const dateFilteredVideos = await page.evaluate(() => {
+    const videoElements = Array.from(
+      document.querySelectorAll("ytd-video-renderer")
+    );
+    return videoElements.slice(0, 5).map((videoElement) => {
+      const title = videoElement.querySelector("#video-title").textContent;
+      const link = videoElement
+        .querySelector("#video-title")
+        .getAttribute("href");
+      const description =
+        videoElement.querySelector(
+          "#dismissible > div > div.metadata-snippet-container.style-scope.ytd-video-renderer.style-scope.ytd-video-renderer > yt-formatted-string"
+        )?.textContent || "";
+      const publishDate =
+        videoElement.querySelector("#metadata-line > span:nth-child(4)")
+          ?.textContent || "";
+      return { title, link, description, publishDate };
+    });
+  });
+
+  // Load the existing JSON file for relevance-filtered data
+  const cleanedQuery = cleanFileName(query);
+  const relevanceFilePath = path.join(dataFolderPath, `${cleanedQuery}.json`);
+  const existingData = JSON.parse(
+    await fs.readFile(relevanceFilePath, "utf-8")
+  );
+
+  // Append the date-filtered data to the existing data
+  existingData.dateFiltered = dateFilteredVideos;
+
+  // Update the JSON file with the combined data
+  const combinedFilePath = path.join(dataFolderPath, `${cleanedQuery}.json`);
+  await fs.writeFile(combinedFilePath, JSON.stringify(existingData, null, 2));
+
+  console.log(`JSON file updated for "${query}" videos within the past year.`);
+
+  // Scroll down to load more videos
+  /*for (let j = 0; j < 2; j++) { // Adjust the number of scrolls as needed
+    await scrollDown(page);
+    await page.waitForTimeout(2000); // Wait for 2 seconds after each scroll
+  }*/
+}
+
 (async () => {
-  const browser = await puppeteer.launch();
+  const browser = await puppeteer.launch({ headless: false });
   const page = await browser.newPage();
 
   try {
     // Read search queries from an existing JSON file
-    const searchQueriesFile = 'how-to-topics.json'; // Replace with your JSON file
-    const searchQueries = await fs.readFile(searchQueriesFile, 'utf-8');
+    const topics = "./data/how-to-topics.json";
+    const plugins = "./data/plugins-api.json";
+    const searchQueriesFile = topics;
+    const searchQueries = await fs.readFile(searchQueriesFile, "utf-8");
     const queriesArray = JSON.parse(searchQueries);
 
-    const baseUrl = 'https://www.youtube.com/results';
+    // Load the last processed query from a progress JSON file
+    let lastProcessedIndex = 0;
+    const progressFilePath = "./data/progress.json";
+    try {
+      const progressData = await fs.readFile(progressFilePath, "utf-8");
+      const progress = JSON.parse(progressData);
+      lastProcessedIndex = progress.lastProcessedIndex || 0;
+    } catch (error) {
+      console.error("Progress file not found. Starting from the beginning.");
+    }
 
     // Create a 'data' subfolder if it doesn't exist
-    const dataFolderPath = path.join(__dirname, 'data');
+    var dataFolderPath = "";
+    if (searchQueriesFile == topics) {
+      dataFolderPath += path.join(
+        __dirname,
+        "data/individual-api-files/how-to"
+      );
+    } else {
+      // plugin
+      dataFolderPath += path.join(
+        __dirname,
+        "data/individual-api-files/plugins"
+      );
+    }
     await fs.mkdir(dataFolderPath, { recursive: true });
 
-    for (const query of queriesArray) {
-      let queryParams = `?search_query=${encodeURIComponent(query)}&hl=EN`;
-
-      // Search by relevance
-      await page.goto(baseUrl + queryParams);
-      await page.waitForSelector('ytd-video-renderer');
-
-      // Scroll down to load more videos
-      for (let i = 0; i < 2; i++) { // Adjust the number of scrolls as needed
-        await scrollDown(page);
-        await page.waitForTimeout(1000); // Wait for some time after scrolling
-      }
-
-      const relevanceVideos = await page.evaluate(() => {
-        const videoElements = Array.from(document.querySelectorAll('ytd-video-renderer'));
-        return videoElements.slice(0, 20).map(videoElement => {
-          const title = videoElement.querySelector('#video-title').textContent;
-          const link = videoElement.querySelector('#video-title').getAttribute('href');
-          const description = videoElement.querySelector('#dismissible > div > div.metadata-snippet-container-one-line.style-scope.ytd-video-renderer.style-scope.ytd-video-renderer > yt-formatted-string')?.textContent || '';
-          const publishDate = videoElement.querySelector('#metadata-line > span:nth-child(4)')?.textContent || '';
-          return { title, link, description, publishDate };
-        });
-      });
-
-      // Search by date
-      queryParams += '&sp=CAI%253D';
-      await page.goto(baseUrl + queryParams);
-      await page.waitForSelector('ytd-video-renderer');
-
-      // Scroll down to load more videos
-      for (let i = 0; i < 2; i++) { // Adjust the number of scrolls as needed
-        await scrollDown(page);
-        await page.waitForTimeout(1000); // Wait for some time after scrolling
-      }
-
-      const dateVideos = await page.evaluate(() => {
-        const videoElements = Array.from(document.querySelectorAll('ytd-video-renderer'));
-        return videoElements.slice(0, 20).map(videoElement => {
-          const title = videoElement.querySelector('#video-title').textContent;
-          const link = videoElement.querySelector('#video-title').getAttribute('href');
-          const description = videoElement.querySelector('#dismissible > div > div.metadata-snippet-container-one-line.style-scope.ytd-video-renderer.style-scope.ytd-video-renderer > yt-formatted-string')?.textContent || '';
-          const publishDate = videoElement.querySelector('#metadata-line > span:nth-child(4)')?.textContent || '';
-          return { title, link, description, publishDate };
-        });
-      });
-
-      // Store video details in a single JSON file as subobjects
-      const combinedData = {
-        relevance: relevanceVideos,
-        date: dateVideos,
+    for (let i = 0; i < queriesArray.length; i++) {
+      // Update the progress JSON file with the last processed query
+      progressData = {
+        lastProcessedIndex: i,
       };
-      const combinedFilePath = path.join(dataFolderPath, `${query}.json`);
-      await fs.writeFile(combinedFilePath, JSON.stringify(combinedData, null, 2));
+      fs.writeFile(progressFilePath, JSON.stringify(progressData, null, 2));
+      // Execute query
+      let query = "";
+      if (queriesArray[i].title) {
+        // topics
+        query += queriesArray[i].title;
+      } else {
+        query += queriesArray[i].name + "WordPress plugin tutorial";
+      }
+      // Scrape by relevance
+      await scrapeByRelevance(page, query, dataFolderPath);
 
-      console.log(`JSON file created for "${query}" videos by relevance and date.`);
+      // Introduce a delay before moving to the next query
+      await page.waitForTimeout(2000);
+
+      // Scrape by date
+      await scrapeByDate(page, query, dataFolderPath);
     }
   } catch (error) {
-    console.error('Error:', error);
+    console.error("Error:", error);
   } finally {
     await browser.close();
   }
