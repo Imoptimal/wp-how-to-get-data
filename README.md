@@ -2,6 +2,8 @@
 
 - Install WordPress plugin locally and run it in order to get the plugins_api data.
 
-- Run node.js (puppeteer scripts) to get the topics data, and YouTube items for both categories.
+- Run node.js (puppeteer scripts) to get the topics data, and YouTube items for both categories:
+    - To get topics data use the command 'npm run topics'
+    - To get YouTube items for each category use the command 'npm run youtube' (In the file get-youtube-data-node.js change manually variable searchQueriesFile accordingly)
 
 - Upload those items to the WP How to website.

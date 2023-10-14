@@ -9,6 +9,11 @@ const path = require("path");
 // Register the plugin
 puppeteer.use(pluginStealth());
 
+// Read search queries from an existing JSON file (change to get the data for other query type)
+const topics = "./data/how-to-topics.json";
+const plugins = "./data/plugins-api.json";
+const searchQueriesFile = topics;
+
 // Function to scroll down the page to load more videos
 async function scrollDown(page) {
   await page.evaluate(async () => {
@@ -41,9 +46,13 @@ function cleanFileName(name) {
     .substring(0, 100); // Limit the length of the file name
 }
 
-async function scrapeByRelevance(page, query, dataFolderPath) {
+async function scrapeByRelevance(page, query, dataFolderPath, pluginSlug) {
   const queryParams = `?search_query=${encodeURIComponent(query)}`;
   const baseUrl = "https://www.youtube.com/results";
+
+  if (pluginSlug === undefined) { // topics query
+    pluginSlug = 'Not needed!';
+  }
 
   // Search by relevance
   await page.setUserAgent(
@@ -82,7 +91,13 @@ async function scrapeByRelevance(page, query, dataFolderPath) {
   });
 
   // Store video details in a single JSON file as subobjects
-  const cleanedQuery = cleanFileName(query);
+  var cleanedQuery = '';
+  if (searchQueriesFile === topics) {
+    cleanedQuery += cleanFileName(query);
+  } else { // plugins
+    cleanedQuery += pluginSlug;
+  }
+
   const combinedData = {
     relevance: relevanceVideos,
   };
@@ -93,9 +108,13 @@ async function scrapeByRelevance(page, query, dataFolderPath) {
   console.log(`JSON file created for "${query}" videos by relevance.`);
 }
 
-async function scrapeByDate(page, query, dataFolderPath) {
+async function scrapeByDate(page, query, dataFolderPath, pluginSlug) {
   const queryParams = `?search_query=${encodeURIComponent(query)}&sp=EgIIBQ%253D%253D`;
   const baseUrl = "https://www.youtube.com/results";
+
+  if (pluginSlug === undefined) { // topics query
+    pluginSlug = 'Not needed!';
+  }
 
   // Search by date (past year)
   await page.setUserAgent(
@@ -126,7 +145,13 @@ async function scrapeByDate(page, query, dataFolderPath) {
   });
 
   // Load the existing JSON file for relevance-filtered data
-  const cleanedQuery = cleanFileName(query);
+  var cleanedQuery = '';
+  if (searchQueriesFile === topics) {
+    cleanedQuery += cleanFileName(query);
+  } else { // plugins
+    cleanedQuery += pluginSlug;
+  }
+
   const relevanceFilePath = path.join(dataFolderPath, `${cleanedQuery}.json`);
   const existingData = JSON.parse(
     await fs.readFile(relevanceFilePath, "utf-8")
@@ -153,20 +178,23 @@ async function scrapeByDate(page, query, dataFolderPath) {
   const page = await browser.newPage();
 
   try {
-    // Read search queries from an existing JSON file
-    const topics = "./data/how-to-topics.json";
-    const plugins = "./data/plugins-api.json";
-    const searchQueriesFile = topics;
     const searchQueries = await fs.readFile(searchQueriesFile, "utf-8");
-    const queriesArray = JSON.parse(searchQueries);
-
+    var queriesArray = [];
+    if (searchQueriesFile === topics) {
+      queriesArray = JSON.parse(searchQueries);
+    } else { // plugins
+      var queriesObject = JSON.parse(searchQueries);
+      for(var i in queriesObject) {
+        queriesArray.push([i, queriesObject[i]]);
+      }
+    }
     // Load the last processed query from a progress JSON file
     let lastProcessedIndex = 0;
     const progressFilePath = "./data/progress.json";
     try {
       const progressData = await fs.readFile(progressFilePath, "utf-8");
       const progress = JSON.parse(progressData);
-      lastProcessedIndex = progress.lastProcessedIndex || 0;
+      lastProcessedIndex = progress.lastProcessedIndex;
     } catch (error) {
       console.error("Progress file not found. Starting from the beginning.");
     }
@@ -187,7 +215,7 @@ async function scrapeByDate(page, query, dataFolderPath) {
     }
     await fs.mkdir(dataFolderPath, { recursive: true });
 
-    for (let i = 0; i < queriesArray.length; i++) {
+    for (let i = lastProcessedIndex; i < queriesArray.length; i++) {
       // Update the progress JSON file with the last processed query
       progressData = {
         lastProcessedIndex: i,
@@ -195,20 +223,22 @@ async function scrapeByDate(page, query, dataFolderPath) {
       fs.writeFile(progressFilePath, JSON.stringify(progressData, null, 2));
       // Execute query
       let query = "";
-      if (queriesArray[i].title) {
-        // topics
+      let pluginSlug;
+      if (searchQueriesFile === topics) {
         query += queriesArray[i].title;
-      } else {
-        query += queriesArray[i].name + "WordPress plugin tutorial";
+      } else { // plugins
+        query += queriesArray[i][1].name + " WordPress plugin tutorial";
+        pluginSlug = queriesArray[i][1].slug;
       }
+      console.log(pluginSlug);
       // Scrape by relevance
-      await scrapeByRelevance(page, query, dataFolderPath);
+      await scrapeByRelevance(page, query, dataFolderPath, pluginSlug);
 
       // Introduce a delay before moving to the next query
       await page.waitForTimeout(2000);
 
       // Scrape by date
-      await scrapeByDate(page, query, dataFolderPath);
+      await scrapeByDate(page, query, dataFolderPath, pluginSlug);
     }
   } catch (error) {
     console.error("Error:", error);
