@@ -50,18 +50,15 @@ async function scrapeByRelevance(page, query, dataFolderPath, pluginSlug) {
   const queryParams = `?search_query=${encodeURIComponent(query)}`;
   const baseUrl = "https://www.youtube.com/results";
 
-  if (pluginSlug === undefined) { // topics query
-    pluginSlug = 'Not needed!';
+  if (pluginSlug === undefined) {
+    // topics query
+    pluginSlug = "Not needed!";
   }
 
   // Search by relevance
   await page.setUserAgent(
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.88 Safari/537.36"
   );
-  await page.goto(baseUrl + queryParams);
-
-  // Wait for the page to load and selectors to appear
-  await page.waitForSelector("ytd-video-renderer", { timeout: 60000 });
 
   // Scroll down to load more videos
   /*for (let j = 0; j < 2; j++) {
@@ -70,107 +67,180 @@ async function scrapeByRelevance(page, query, dataFolderPath, pluginSlug) {
     await page.waitForTimeout(2000); // Wait for 2 seconds after each scroll
   }*/
 
-  const relevanceVideos = await page.evaluate(() => {
-    const videoElements = Array.from(
-      document.querySelectorAll("ytd-video-renderer")
-    );
-    return videoElements.slice(0, 5).map((videoElement) => {
-      const title = videoElement.querySelector("#video-title").textContent;
-      const link = videoElement
-        .querySelector("#video-title")
-        .getAttribute("href");
-      const description =
-        videoElement.querySelector(
-          "#dismissible > div > div.metadata-snippet-container.style-scope.ytd-video-renderer.style-scope.ytd-video-renderer > yt-formatted-string"
-        )?.textContent || "";
-      const publishDate =
-        videoElement.querySelector("#metadata-line > span:nth-child(4)")
-          ?.textContent || "";
-      return { title, link, description, publishDate };
-    });
-  });
+  const maxAttempts = 3; // Set the maximum number of attempts
+  let resultsFound = false;
+  try {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      console.log(`Attempt ${attempt}: Searching for "${query}"...`);
+      await page.goto(baseUrl + queryParams);
+      // Wait for the search results or "no results" page
+      await Promise.race([
+        page.waitForSelector("ytd-video-renderer", { timeout: 30000 }),
+        page.waitForSelector(".ytd-background-promo-renderer", { timeout: 30000 }),
+      ]);
 
-  // Store video details in a single JSON file as subobjects
-  var cleanedQuery = '';
-  if (searchQueriesFile === topics) {
-    cleanedQuery += cleanFileName(query);
-  } else { // plugins
-    cleanedQuery += pluginSlug;
+      // Check if no results are found
+      const noResultsElement = await page.$(".ytd-background-promo-renderer");
+      if (noResultsElement) {
+        console.log("No results found. Retrying the search...");
+      } else {
+        const relevanceVideos = await page.evaluate(() => {
+          const videoElements = Array.from(
+            document.querySelectorAll("ytd-video-renderer")
+          );
+          return videoElements.slice(0, 5).map((videoElement) => {
+            const title =
+              videoElement.querySelector("#video-title").textContent;
+            const link = videoElement
+              .querySelector("#video-title")
+              .getAttribute("href");
+            const description =
+              videoElement.querySelector(
+                "#dismissible > div > div.metadata-snippet-container.style-scope.ytd-video-renderer.style-scope.ytd-video-renderer > yt-formatted-string"
+              )?.textContent || "";
+            const publishDate =
+              videoElement.querySelector("#metadata-line > span:nth-child(4)")
+                ?.textContent || "";
+            return { title, link, description, publishDate };
+          });
+        });
+
+        // Store video details in a single JSON file as subobjects
+        var cleanedQuery = "";
+        if (searchQueriesFile === topics) {
+          cleanedQuery += cleanFileName(query);
+        } else {
+          // plugins
+          cleanedQuery += pluginSlug;
+        }
+
+        const combinedData = {
+          relevance: relevanceVideos,
+        };
+        const relevanceFileName = `${cleanedQuery}.json`;
+        const combinedFilePath = path.join(dataFolderPath, relevanceFileName);
+        await fs.writeFile(
+          combinedFilePath,
+          JSON.stringify(combinedData, null, 2)
+        );
+
+        console.log(`JSON file created for "${query}" videos by relevance.`);
+
+        resultsFound = true; // Set the flag to true
+        break; // Exit the loop if results are found
+      }
+    }
+  } catch (error) {
+    console.error("An error occurred:", error);
   }
-
-  const combinedData = {
-    relevance: relevanceVideos,
-  };
-  const relevanceFileName = `${cleanedQuery}.json`;
-  const combinedFilePath = path.join(dataFolderPath, relevanceFileName);
-  await fs.writeFile(combinedFilePath, JSON.stringify(combinedData, null, 2));
-
-  console.log(`JSON file created for "${query}" videos by relevance.`);
+  if (!resultsFound) {
+    console.log(`Results not found in ${maxAttempts} attempts.`);
+  }
 }
 
 async function scrapeByDate(page, query, dataFolderPath, pluginSlug) {
-  const queryParams = `?search_query=${encodeURIComponent(query)}&sp=EgIIBQ%253D%253D`;
+  const queryParams = `?search_query=${encodeURIComponent(
+    query
+  )}&sp=EgIIBQ%253D%253D`;
   const baseUrl = "https://www.youtube.com/results";
 
-  if (pluginSlug === undefined) { // topics query
-    pluginSlug = 'Not needed!';
+  if (pluginSlug === undefined) {
+    // topics query
+    pluginSlug = "Not needed!";
   }
 
   // Search by date (past year)
   await page.setUserAgent(
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.88 Safari/537.36"
   );
-  await page.goto(baseUrl + queryParams);
-  // Wait for the page to load and selectors to appear
-
-  await page.waitForSelector("ytd-video-renderer", { timeout: 60000 });
-  const dateFilteredVideos = await page.evaluate(() => {
-    const videoElements = Array.from(
-      document.querySelectorAll("ytd-video-renderer")
-    );
-    return videoElements.slice(0, 5).map((videoElement) => {
-      const title = videoElement.querySelector("#video-title").textContent;
-      const link = videoElement
-        .querySelector("#video-title")
-        .getAttribute("href");
-      const description =
-        videoElement.querySelector(
-          "#dismissible > div > div.metadata-snippet-container.style-scope.ytd-video-renderer.style-scope.ytd-video-renderer > yt-formatted-string"
-        )?.textContent || "";
-      const publishDate =
-        videoElement.querySelector("#metadata-line > span:nth-child(4)")
-          ?.textContent || "";
-      return { title, link, description, publishDate };
-    });
-  });
-
-  // Load the existing JSON file for relevance-filtered data
-  var cleanedQuery = '';
-  if (searchQueriesFile === topics) {
-    cleanedQuery += cleanFileName(query);
-  } else { // plugins
-    cleanedQuery += pluginSlug;
-  }
-
-  const relevanceFilePath = path.join(dataFolderPath, `${cleanedQuery}.json`);
-  const existingData = JSON.parse(
-    await fs.readFile(relevanceFilePath, "utf-8")
-  );
-
-  // Append the date-filtered data to the existing data
-  existingData.dateFiltered = dateFilteredVideos;
-
-  // Update the JSON file with the combined data
-  const combinedFilePath = path.join(dataFolderPath, `${cleanedQuery}.json`);
-  await fs.writeFile(combinedFilePath, JSON.stringify(existingData, null, 2));
-
-  console.log(`JSON file updated for "${query}" videos within the past year.`);
 
   // Scroll down to load more videos
   /*for (let j = 0; j < 2; j++) { // Adjust the number of scrolls as needed
     await scrollDown(page);
     await page.waitForTimeout(2000); // Wait for 2 seconds after each scroll
   }*/
+
+  const maxAttempts = 3; // Set the maximum number of attempts
+  let resultsFound = false;
+  try {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      console.log(`Attempt ${attempt}: Searching for "${query}"...`);
+      await page.goto(baseUrl + queryParams);
+      // Wait for the search results or "no results" page
+      await Promise.race([
+        page.waitForSelector("ytd-video-renderer", { timeout: 30000 }),
+        page.waitForSelector(".ytd-background-promo-renderer", { timeout: 30000 }),
+      ]);
+
+      // Check if no results are found
+      const noResultsElement = await page.$(".ytd-background-promo-renderer");
+      if (noResultsElement) {
+        console.log("No results found. Retrying the search...");
+      } else {
+        const dateFilteredVideos = await page.evaluate(() => {
+          const videoElements = Array.from(
+            document.querySelectorAll("ytd-video-renderer")
+          );
+          return videoElements.slice(0, 5).map((videoElement) => {
+            const title =
+              videoElement.querySelector("#video-title").textContent;
+            const link = videoElement
+              .querySelector("#video-title")
+              .getAttribute("href");
+            const description =
+              videoElement.querySelector(
+                "#dismissible > div > div.metadata-snippet-container.style-scope.ytd-video-renderer.style-scope.ytd-video-renderer > yt-formatted-string"
+              )?.textContent || "";
+            const publishDate =
+              videoElement.querySelector("#metadata-line > span:nth-child(4)")
+                ?.textContent || "";
+            return { title, link, description, publishDate };
+          });
+        });
+        // Load the existing JSON file for relevance-filtered data
+        var cleanedQuery = "";
+        if (searchQueriesFile === topics) {
+          cleanedQuery += cleanFileName(query);
+        } else {
+          // plugins
+          cleanedQuery += pluginSlug;
+        }
+
+        const relevanceFilePath = path.join(
+          dataFolderPath,
+          `${cleanedQuery}.json`
+        );
+        const existingData = JSON.parse(
+          await fs.readFile(relevanceFilePath, "utf-8")
+        );
+
+        // Append the date-filtered data to the existing data
+        existingData.dateFiltered = dateFilteredVideos;
+
+        // Update the JSON file with the combined data
+        const combinedFilePath = path.join(
+          dataFolderPath,
+          `${cleanedQuery}.json`
+        );
+        await fs.writeFile(
+          combinedFilePath,
+          JSON.stringify(existingData, null, 2)
+        );
+
+        console.log(
+          `JSON file updated for "${query}" videos within the past year.`
+        );
+
+        resultsFound = true; // Set the flag to true
+        break; // Exit the loop if results are found
+      }
+    }
+  } catch (error) {
+    console.error("An error occurred:", error);
+  }
+  if (!resultsFound) {
+    console.log(`Results not found in ${maxAttempts} attempts.`);
+  }
 }
 
 (async () => {
@@ -182,9 +252,10 @@ async function scrapeByDate(page, query, dataFolderPath, pluginSlug) {
     var queriesArray = [];
     if (searchQueriesFile === topics) {
       queriesArray = JSON.parse(searchQueries);
-    } else { // plugins
+    } else {
+      // plugins
       var queriesObject = JSON.parse(searchQueries);
-      for(var i in queriesObject) {
+      for (var i in queriesObject) {
         queriesArray.push([i, queriesObject[i]]);
       }
     }
@@ -226,7 +297,8 @@ async function scrapeByDate(page, query, dataFolderPath, pluginSlug) {
       let pluginSlug;
       if (searchQueriesFile === topics) {
         query += queriesArray[i].title;
-      } else { // plugins
+      } else {
+        // plugins
         query += queriesArray[i][1].name + " WordPress plugin tutorial";
         pluginSlug = queriesArray[i][1].slug;
       }
