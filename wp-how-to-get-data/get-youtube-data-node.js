@@ -129,7 +129,6 @@ async function scrapeByRelevance(page, query, dataFolderPath, pluginSlug) {
         console.log("No results found. Retrying the search...");
         // Select "Last year" filter (you may need to adjust the selector)
         await page.click('#filter-button');
-        await page.waitForSelector('#label > yt-formatted-string:has-text("This year")');
         await page.click('#label > yt-formatted-string:has-text("This year")');
         // Manually press the search button
         await page.click('button#search-icon-legacy');
@@ -246,7 +245,6 @@ async function scrapeByDate(page, query, dataFolderPath, pluginSlug) {
         console.log("No results found. Retrying the search...");
         // Select "Last year" filter (you may need to adjust the selector)
         await page.click('#filter-button');
-        await page.waitForSelector('#label > yt-formatted-string:has-text("This year")');
         await page.click('#label > yt-formatted-string:has-text("This year")');
         // Manually press the search button
         await page.click('button#search-icon-legacy');
