@@ -12,7 +12,7 @@ puppeteer.use(pluginStealth());
 // Read search queries from an existing JSON file (change to get the data for other query type)
 const topics = "./data/how-to-topics.json";
 const plugins = "./data/plugins-api.json";
-const searchQueriesFile = topics;
+const searchQueriesFile = plugins;
 
 // Function to scroll down the page to load more videos
 async function scrollDown(page) {
@@ -66,6 +66,50 @@ async function scrapeByRelevance(page, query, dataFolderPath, pluginSlug) {
     await scrollDown(page);
     await page.waitForTimeout(2000); // Wait for 2 seconds after each scroll
   }*/
+  // Used multiple times below
+  async function getData(page, query, dataFolderPath, pluginSlug) {
+    const relevanceVideos = await page.evaluate(() => {
+      const videoElements = Array.from(
+        document.querySelectorAll("ytd-video-renderer")
+      );
+      return videoElements.slice(0, 5).map((videoElement) => {
+        const title =
+          videoElement.querySelector("#video-title").textContent;
+        const link = videoElement
+          .querySelector("#video-title")
+          .getAttribute("href");
+        const description =
+          videoElement.querySelector(
+            "#dismissible > div > div.metadata-snippet-container.style-scope.ytd-video-renderer.style-scope.ytd-video-renderer > yt-formatted-string"
+          )?.textContent || "";
+        const publishDate =
+          videoElement.querySelector("#metadata-line > span:nth-child(4)")
+            ?.textContent || "";
+        return { title, link, description, publishDate };
+      });
+    });
+
+    // Store video details in a single JSON file as subobjects
+    var cleanedQuery = "";
+    if (searchQueriesFile === topics) {
+      cleanedQuery += cleanFileName(query);
+    } else {
+      // plugins
+      cleanedQuery += pluginSlug;
+    }
+
+    const combinedData = {
+      relevance: relevanceVideos,
+    };
+    const relevanceFileName = `${cleanedQuery}.json`;
+    const combinedFilePath = path.join(dataFolderPath, relevanceFileName);
+    await fs.writeFile(
+      combinedFilePath,
+      JSON.stringify(combinedData, null, 2)
+    );
+
+    console.log(`JSON file created for "${query}" videos by relevance.`);
+  }
 
   const maxAttempts = 3; // Set the maximum number of attempts
   let resultsFound = false;
@@ -83,49 +127,15 @@ async function scrapeByRelevance(page, query, dataFolderPath, pluginSlug) {
       const noResultsElement = await page.$(".ytd-background-promo-renderer");
       if (noResultsElement) {
         console.log("No results found. Retrying the search...");
+        // Select "Last year" filter (you may need to adjust the selector)
+        await page.click('#filter-button');
+        await page.waitForSelector('#label > yt-formatted-string:has-text("This year")');
+        await page.click('#label > yt-formatted-string:has-text("This year")');
+        // Manually press the search button
+        await page.click('button#search-icon-legacy');
+        getData(page, query, dataFolderPath, pluginSlug);
       } else {
-        const relevanceVideos = await page.evaluate(() => {
-          const videoElements = Array.from(
-            document.querySelectorAll("ytd-video-renderer")
-          );
-          return videoElements.slice(0, 5).map((videoElement) => {
-            const title =
-              videoElement.querySelector("#video-title").textContent;
-            const link = videoElement
-              .querySelector("#video-title")
-              .getAttribute("href");
-            const description =
-              videoElement.querySelector(
-                "#dismissible > div > div.metadata-snippet-container.style-scope.ytd-video-renderer.style-scope.ytd-video-renderer > yt-formatted-string"
-              )?.textContent || "";
-            const publishDate =
-              videoElement.querySelector("#metadata-line > span:nth-child(4)")
-                ?.textContent || "";
-            return { title, link, description, publishDate };
-          });
-        });
-
-        // Store video details in a single JSON file as subobjects
-        var cleanedQuery = "";
-        if (searchQueriesFile === topics) {
-          cleanedQuery += cleanFileName(query);
-        } else {
-          // plugins
-          cleanedQuery += pluginSlug;
-        }
-
-        const combinedData = {
-          relevance: relevanceVideos,
-        };
-        const relevanceFileName = `${cleanedQuery}.json`;
-        const combinedFilePath = path.join(dataFolderPath, relevanceFileName);
-        await fs.writeFile(
-          combinedFilePath,
-          JSON.stringify(combinedData, null, 2)
-        );
-
-        console.log(`JSON file created for "${query}" videos by relevance.`);
-
+        getData(page, query, dataFolderPath, pluginSlug);
         resultsFound = true; // Set the flag to true
         break; // Exit the loop if results are found
       }
@@ -160,6 +170,64 @@ async function scrapeByDate(page, query, dataFolderPath, pluginSlug) {
     await page.waitForTimeout(2000); // Wait for 2 seconds after each scroll
   }*/
 
+  // Used multiple times below
+  async function getData(page, query, dataFolderPath, pluginSlug) {
+    const dateFilteredVideos = await page.evaluate(() => {
+      const videoElements = Array.from(
+        document.querySelectorAll("ytd-video-renderer")
+      );
+      return videoElements.slice(0, 5).map((videoElement) => {
+        const title =
+          videoElement.querySelector("#video-title").textContent;
+        const link = videoElement
+          .querySelector("#video-title")
+          .getAttribute("href");
+        const description =
+          videoElement.querySelector(
+            "#dismissible > div > div.metadata-snippet-container.style-scope.ytd-video-renderer.style-scope.ytd-video-renderer > yt-formatted-string"
+          )?.textContent || "";
+        const publishDate =
+          videoElement.querySelector("#metadata-line > span:nth-child(4)")
+            ?.textContent || "";
+        return { title, link, description, publishDate };
+      });
+    });
+
+    // Load the existing JSON file for relevance-filtered data
+    var cleanedQuery = "";
+    if (searchQueriesFile === topics) {
+      cleanedQuery += cleanFileName(query);
+    } else {
+      // plugins
+      cleanedQuery += pluginSlug;
+    }
+
+    const relevanceFilePath = path.join(
+      dataFolderPath,
+      `${cleanedQuery}.json`
+    );
+    const existingData = JSON.parse(
+      await fs.readFile(relevanceFilePath, "utf-8")
+    );
+
+    // Append the date-filtered data to the existing data
+    existingData.dateFiltered = dateFilteredVideos;
+
+    // Update the JSON file with the combined data
+    const combinedFilePath = path.join(
+      dataFolderPath,
+      `${cleanedQuery}.json`
+    );
+    await fs.writeFile(
+      combinedFilePath,
+      JSON.stringify(existingData, null, 2)
+    );
+
+    console.log(
+      `JSON file updated for "${query}" videos within the past year.`
+    );
+  }
+
   const maxAttempts = 3; // Set the maximum number of attempts
   let resultsFound = false;
   try {
@@ -176,61 +244,15 @@ async function scrapeByDate(page, query, dataFolderPath, pluginSlug) {
       const noResultsElement = await page.$(".ytd-background-promo-renderer");
       if (noResultsElement) {
         console.log("No results found. Retrying the search...");
+        // Select "Last year" filter (you may need to adjust the selector)
+        await page.click('#filter-button');
+        await page.waitForSelector('#label > yt-formatted-string:has-text("This year")');
+        await page.click('#label > yt-formatted-string:has-text("This year")');
+        // Manually press the search button
+        await page.click('button#search-icon-legacy');
+        getData(page, query, dataFolderPath, pluginSlug);
       } else {
-        const dateFilteredVideos = await page.evaluate(() => {
-          const videoElements = Array.from(
-            document.querySelectorAll("ytd-video-renderer")
-          );
-          return videoElements.slice(0, 5).map((videoElement) => {
-            const title =
-              videoElement.querySelector("#video-title").textContent;
-            const link = videoElement
-              .querySelector("#video-title")
-              .getAttribute("href");
-            const description =
-              videoElement.querySelector(
-                "#dismissible > div > div.metadata-snippet-container.style-scope.ytd-video-renderer.style-scope.ytd-video-renderer > yt-formatted-string"
-              )?.textContent || "";
-            const publishDate =
-              videoElement.querySelector("#metadata-line > span:nth-child(4)")
-                ?.textContent || "";
-            return { title, link, description, publishDate };
-          });
-        });
-        // Load the existing JSON file for relevance-filtered data
-        var cleanedQuery = "";
-        if (searchQueriesFile === topics) {
-          cleanedQuery += cleanFileName(query);
-        } else {
-          // plugins
-          cleanedQuery += pluginSlug;
-        }
-
-        const relevanceFilePath = path.join(
-          dataFolderPath,
-          `${cleanedQuery}.json`
-        );
-        const existingData = JSON.parse(
-          await fs.readFile(relevanceFilePath, "utf-8")
-        );
-
-        // Append the date-filtered data to the existing data
-        existingData.dateFiltered = dateFilteredVideos;
-
-        // Update the JSON file with the combined data
-        const combinedFilePath = path.join(
-          dataFolderPath,
-          `${cleanedQuery}.json`
-        );
-        await fs.writeFile(
-          combinedFilePath,
-          JSON.stringify(existingData, null, 2)
-        );
-
-        console.log(
-          `JSON file updated for "${query}" videos within the past year.`
-        );
-
+        getData(page, query, dataFolderPath, pluginSlug);
         resultsFound = true; // Set the flag to true
         break; // Exit the loop if results are found
       }
@@ -302,7 +324,7 @@ async function scrapeByDate(page, query, dataFolderPath, pluginSlug) {
         query += queriesArray[i][1].name + " WordPress plugin tutorial";
         pluginSlug = queriesArray[i][1].slug;
       }
-      console.log(pluginSlug);
+
       // Scrape by relevance
       await scrapeByRelevance(page, query, dataFolderPath, pluginSlug);
 
