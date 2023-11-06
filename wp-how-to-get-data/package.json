@@ -5,7 +5,8 @@
   "main": "helper-script.js",
   "scripts": {
     "topics": "node get-topics-node.js",
-    "youtube": "node get-youtube-data-node.js"
+    "youtube": "node get-youtube-data-node.js",
+    "search": "node create-search-files.js"
   },
   "author": "",
   "license": "ISC",

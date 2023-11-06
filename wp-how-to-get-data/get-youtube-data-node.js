@@ -12,7 +12,7 @@ puppeteer.use(pluginStealth());
 // Read search queries from an existing JSON file (change to get the data for other query type)
 const topics = "./data/how-to-topics.json";
 const plugins = "./data/plugins-api.json";
-const searchQueriesFile = plugins;
+const searchQueriesFile = topics;
 
 // Function to scroll down the page to load more videos
 async function scrollDown(page) {
@@ -44,6 +44,28 @@ function cleanFileName(name) {
     .replace(/[^\w\s-]/g, "") // Remove characters not allowed in file names
     .replace(/\s+/g, "-") // Replace spaces with "-" symbol
     .substring(0, 100); // Limit the length of the file name
+}
+
+// If missing videos (error occurs)
+async function missingData() {
+  let existingData;
+  if (searchQueriesFile === topics) {
+    existingData = JSON.parse(
+      await fs.readFile("/data/missing-topics.json", "utf-8")
+    );
+  } else { // plugins
+    existingData = JSON.parse(
+      await fs.readFile("/data/missing-plugins.json", "utf-8")
+    );
+  }
+
+  // Append current item to the existing data
+  existingData.dateFiltered = dateFilteredVideos;
+
+  await fs.writeFile(
+    combinedFilePath,
+    JSON.stringify(existingData, null, 2)
+  );
 }
 
 async function scrapeByRelevance(page, query, dataFolderPath, pluginSlug) {
@@ -119,8 +141,8 @@ async function scrapeByRelevance(page, query, dataFolderPath, pluginSlug) {
       await page.goto(baseUrl + queryParams);
       // Wait for the search results or "no results" page
       await Promise.race([
-        page.waitForSelector("ytd-video-renderer", { timeout: 30000 }),
-        page.waitForSelector(".ytd-background-promo-renderer", { timeout: 30000 }),
+        page.waitForSelector("ytd-video-renderer", { timeout: 60000 }),
+        page.waitForSelector(".ytd-background-promo-renderer", { timeout: 60000 }),
       ]);
 
       // Check if no results are found
@@ -235,8 +257,8 @@ async function scrapeByDate(page, query, dataFolderPath, pluginSlug) {
       await page.goto(baseUrl + queryParams);
       // Wait for the search results or "no results" page
       await Promise.race([
-        page.waitForSelector("ytd-video-renderer", { timeout: 30000 }),
-        page.waitForSelector(".ytd-background-promo-renderer", { timeout: 30000 }),
+        page.waitForSelector("ytd-video-renderer", { timeout: 60000 }),
+        page.waitForSelector(".ytd-background-promo-renderer", { timeout: 60000 }),
       ]);
 
       // Check if no results are found
@@ -327,10 +349,13 @@ async function scrapeByDate(page, query, dataFolderPath, pluginSlug) {
       await scrapeByRelevance(page, query, dataFolderPath, pluginSlug);
 
       // Introduce a delay before moving to the next query
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(5000);
 
       // Scrape by date
       await scrapeByDate(page, query, dataFolderPath, pluginSlug);
+
+      // Introduce a delay before moving to the next query
+      await page.waitForTimeout(5000);
     }
   } catch (error) {
     console.error("Error:", error);
