@@ -90,6 +90,7 @@ async function scrapeByRelevance(page, query, dataFolderPath, pluginSlug) {
   }*/
   // Used multiple times below
   async function getData(page, query, dataFolderPath, pluginSlug) {
+    // Selectors used later
     const relevanceVideos = await page.evaluate(() => {
       const videoElements = Array.from(
         document.querySelectorAll("ytd-video-renderer")
@@ -142,6 +143,7 @@ async function scrapeByRelevance(page, query, dataFolderPath, pluginSlug) {
       // Wait for the search results or "no results" page
       await Promise.race([
         page.waitForSelector("ytd-video-renderer", { timeout: 60000 }),
+        // Results not found
         page.waitForSelector(".ytd-background-promo-renderer", { timeout: 60000 }),
       ]);
 
@@ -163,6 +165,10 @@ async function scrapeByRelevance(page, query, dataFolderPath, pluginSlug) {
     }
   } catch (error) {
     console.error("An error occurred:", error);
+    // Handle "Aw, snap" error
+    if (error instanceof TimeoutError) {
+      await page.reload();
+    }
   }
   if (!resultsFound) {
     console.log(`Results not found in ${maxAttempts} attempts.`);
@@ -258,6 +264,7 @@ async function scrapeByDate(page, query, dataFolderPath, pluginSlug) {
       // Wait for the search results or "no results" page
       await Promise.race([
         page.waitForSelector("ytd-video-renderer", { timeout: 60000 }),
+        // Results not found
         page.waitForSelector(".ytd-background-promo-renderer", { timeout: 60000 }),
       ]);
 
@@ -279,6 +286,10 @@ async function scrapeByDate(page, query, dataFolderPath, pluginSlug) {
     }
   } catch (error) {
     console.error("An error occurred:", error);
+    // Handle "Aw, snap" error
+    if (error instanceof TimeoutError) {
+      await page.reload();
+    }
   }
   if (!resultsFound) {
     console.log(`Results not found in ${maxAttempts} attempts.`);

@@ -6,7 +6,8 @@
   "scripts": {
     "topics": "node get-topics-node.js",
     "youtube": "node get-youtube-data-node.js",
-    "search": "node create-search-files.js"
+    "search": "node create-search-files-node.js",
+    "test": "node test-node.js"
   },
   "author": "",
   "license": "ISC",
