@@ -83,11 +83,11 @@ async function scrapeByRelevance(page, query, dataFolderPath, pluginSlug) {
   );
 
   // Scroll down to load more videos
-  /*for (let j = 0; j < 2; j++) {
+  for (let j = 0; j < 1; j++) {
     // Adjust the number of scrolls as needed
     await scrollDown(page);
     await page.waitForTimeout(2000); // Wait for 2 seconds after each scroll
-  }*/
+  }
   // Used multiple times below
   async function getData(page, query, dataFolderPath, pluginSlug) {
     // Selectors used later
@@ -165,10 +165,6 @@ async function scrapeByRelevance(page, query, dataFolderPath, pluginSlug) {
     }
   } catch (error) {
     console.error("An error occurred:", error);
-    // Handle "Aw, snap" error
-    if (error instanceof TimeoutError) {
-      await page.reload();
-    }
   }
   if (!resultsFound) {
     console.log(`Results not found in ${maxAttempts} attempts.`);
@@ -192,10 +188,10 @@ async function scrapeByDate(page, query, dataFolderPath, pluginSlug) {
   );
 
   // Scroll down to load more videos
-  /*for (let j = 0; j < 2; j++) { // Adjust the number of scrolls as needed
+  for (let j = 0; j < 1; j++) { // Adjust the number of scrolls as needed
     await scrollDown(page);
     await page.waitForTimeout(2000); // Wait for 2 seconds after each scroll
-  }*/
+  }
 
   // Used multiple times below
   async function getData(page, query, dataFolderPath, pluginSlug) {
@@ -286,17 +282,13 @@ async function scrapeByDate(page, query, dataFolderPath, pluginSlug) {
     }
   } catch (error) {
     console.error("An error occurred:", error);
-    // Handle "Aw, snap" error
-    if (error instanceof TimeoutError) {
-      await page.reload();
-    }
   }
   if (!resultsFound) {
     console.log(`Results not found in ${maxAttempts} attempts.`);
   }
 }
 
-(async () => {
+async function executeCode() {
   const browser = await puppeteer.launch({ headless: false });
   const page = await browser.newPage();
 
@@ -356,21 +348,34 @@ async function scrapeByDate(page, query, dataFolderPath, pluginSlug) {
         pluginSlug = queriesArray[i][1].slug;
       }
 
+      // Extract index numbers to insert a longer pause
+      var endsWithZero = i%10; 
+
       // Scrape by relevance
       await scrapeByRelevance(page, query, dataFolderPath, pluginSlug);
 
       // Introduce a delay before moving to the next query
-      await page.waitForTimeout(5000);
+      if(endsWithZero === 0) { // ends with 0
+        await page.waitForTimeout(10000);
+      } else {
+        await page.waitForTimeout(4000);
+      }
 
       // Scrape by date
       await scrapeByDate(page, query, dataFolderPath, pluginSlug);
 
       // Introduce a delay before moving to the next query
-      await page.waitForTimeout(5000);
+      if(endsWithZero === 0) { // ends with 0
+        await page.waitForTimeout(10000);
+      } else {
+        await page.waitForTimeout(5000);
+      }
     }
   } catch (error) {
     console.error("Error:", error);
+    executeCode();
   } finally {
-    await browser.close();
+    //await browser.close();
   }
-})();
+}
+executeCode();

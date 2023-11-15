@@ -18,14 +18,14 @@ puppeteer.use(pluginStealth());
     try {
         const queryParams = `?search_query=${encodeURIComponent(
             "Testing"
-          )}&sp=EgIIBQ%253D%253D`;
+          )}sp=EgIIAQ%253D%253D`;
         const baseUrl = "https://www.youtube.com/results";
         await page.goto(baseUrl + queryParams);
-        await page.waitForSelector("ytd-video-renderer", { timeout: 100 })
+        await page.waitForSelector("ytd-video-renderer", { timeout: 10000 })
     } catch (error) {
-        console.error("Error:", error);
+        console.error("Error:", error.name);
         // Handle "Aw, snap" error
-        if (error instanceof TimeoutError) {
+        if (error.name === "TimeoutError") {
         await page.reload();
         }
     } finally {
