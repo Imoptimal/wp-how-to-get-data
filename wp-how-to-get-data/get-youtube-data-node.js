@@ -69,7 +69,14 @@ async function missingData() {
 }
 
 async function scrapeByRelevance(page, query, dataFolderPath, pluginSlug) {
-  const queryParams = `?search_query=${encodeURIComponent(query)}`;
+  var cleanedQuery = "";
+    if (searchQueriesFile === topics) {
+      cleanedQuery += cleanFileName(query);
+    } else {
+      // plugins
+      cleanedQuery += cleanFileName(pluginSlug);
+    }
+  const queryParams = `?search_query=${encodeURIComponent(cleanedQuery)}`;
   const baseUrl = "https://www.youtube.com/results";
 
   if (pluginSlug === undefined) {
@@ -113,14 +120,6 @@ async function scrapeByRelevance(page, query, dataFolderPath, pluginSlug) {
     });
 
     // Store video details in a single JSON file as subobjects
-    var cleanedQuery = "";
-    if (searchQueriesFile === topics) {
-      cleanedQuery += cleanFileName(query);
-    } else {
-      // plugins
-      cleanedQuery += pluginSlug;
-    }
-
     const combinedData = {
       relevance: relevanceVideos,
     };
@@ -172,8 +171,15 @@ async function scrapeByRelevance(page, query, dataFolderPath, pluginSlug) {
 }
 
 async function scrapeByDate(page, query, dataFolderPath, pluginSlug) {
+  var cleanedQuery = "";
+    if (searchQueriesFile === topics) {
+      cleanedQuery += cleanFileName(query);
+    } else {
+      // plugins
+      cleanedQuery += cleanFileName(pluginSlug);
+    }
   const queryParams = `?search_query=${encodeURIComponent(
-    query
+    cleanedQuery
   )}&sp=EgIIBQ%253D%253D`;
   const baseUrl = "https://www.youtube.com/results";
 
@@ -217,14 +223,6 @@ async function scrapeByDate(page, query, dataFolderPath, pluginSlug) {
     });
 
     // Load the existing JSON file for relevance-filtered data
-    var cleanedQuery = "";
-    if (searchQueriesFile === topics) {
-      cleanedQuery += cleanFileName(query);
-    } else {
-      // plugins
-      cleanedQuery += pluginSlug;
-    }
-
     const relevanceFilePath = path.join(
       dataFolderPath,
       `${cleanedQuery}.json`

@@ -6,6 +6,7 @@
     - To get topics data use the command 'npm run topics'
     - To get YouTube items for each category use the command 'npm run youtube' (In the file get-youtube-data-node.js change manually variable searchQueriesFile accordingly)
     - To create json files (wordpress-topics.json and wordpress-plugins.json) for search functionality use the command 'npm run search'.
+    - To find missing files (topics and plugins) and run get the data again use the command 'npm run missing'.
 
     - To test segments of puppeteer (node) code, use the test-node.js and the command 'npm run test'.
 
