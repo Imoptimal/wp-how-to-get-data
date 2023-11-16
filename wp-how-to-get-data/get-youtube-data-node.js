@@ -37,13 +37,34 @@ async function scrollDown(page) {
   });
 }
 
-// Function to clean a string for use as a file name
-function cleanFileName(name) {
-  return name
-    .toLowerCase()
-    .replace(/[^\w\s-]/g, "") // Remove characters not allowed in file names
-    .replace(/\s+/g, "-") // Replace spaces with "-" symbol
-    .substring(0, 100); // Limit the length of the file name
+// Function to clean a string for use as a search query/file name
+function cleanString(string, query = true) {
+  if ((query = false)) {
+    // for file name
+    return string
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, "") // Remove characters not allowed in file names (including spaces)
+      .replace(/\s+/g, "-") // Replace spaces with "-" symbol
+      .substring(0, 100); // Limit the length of the file name
+  } else {
+    // for search query
+    return string
+      .replace(/[^\w\s-]/g, " ") // Remove characters not allowed in file names
+      .replace(/\s\s+/g, " "); // Remove multiple spaces
+  }
+}
+
+// Remove shorts from the search results
+function removeShorts(videosArray) {
+  var filteredArray;
+  videosArray.forEach((video, index) => {
+    let videoLink = video.link;
+    if (videoLink.includes("/shorts/")) {
+      videosArray.splice(index, 1);
+    }
+  });
+  filteredArray = videosArray.slice(0, 5);
+  return filteredArray;
 }
 
 // If missing videos (error occurs)
@@ -53,7 +74,8 @@ async function missingData() {
     existingData = JSON.parse(
       await fs.readFile("/data/missing-topics.json", "utf-8")
     );
-  } else { // plugins
+  } else {
+    // plugins
     existingData = JSON.parse(
       await fs.readFile("/data/missing-plugins.json", "utf-8")
     );
@@ -62,20 +84,11 @@ async function missingData() {
   // Append current item to the existing data
   existingData.dateFiltered = dateFilteredVideos;
 
-  await fs.writeFile(
-    combinedFilePath,
-    JSON.stringify(existingData, null, 2)
-  );
+  await fs.writeFile(combinedFilePath, JSON.stringify(existingData, null, 2));
 }
 
 async function scrapeByRelevance(page, query, dataFolderPath, pluginSlug) {
-  var cleanedQuery = "";
-    if (searchQueriesFile === topics) {
-      cleanedQuery += cleanFileName(query);
-    } else {
-      // plugins
-      cleanedQuery += cleanFileName(pluginSlug);
-    }
+  var cleanedQuery = cleanString(query);
   const queryParams = `?search_query=${encodeURIComponent(cleanedQuery)}`;
   const baseUrl = "https://www.youtube.com/results";
 
@@ -89,12 +102,6 @@ async function scrapeByRelevance(page, query, dataFolderPath, pluginSlug) {
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.88 Safari/537.36"
   );
 
-  // Scroll down to load more videos
-  for (let j = 0; j < 1; j++) {
-    // Adjust the number of scrolls as needed
-    await scrollDown(page);
-    await page.waitForTimeout(2000); // Wait for 2 seconds after each scroll
-  }
   // Used multiple times below
   async function getData(page, query, dataFolderPath, pluginSlug) {
     // Selectors used later
@@ -102,33 +109,33 @@ async function scrapeByRelevance(page, query, dataFolderPath, pluginSlug) {
       const videoElements = Array.from(
         document.querySelectorAll("ytd-video-renderer")
       );
-      return videoElements.slice(0, 5).map((videoElement) => {
-        const title =
-          videoElement.querySelector("#video-title").textContent;
+      return videoElements.slice(0, 20).map((videoElement) => {
+        const title = videoElement.querySelector("#video-title").textContent;
         const link = videoElement
           .querySelector("#video-title")
           .getAttribute("href");
-        const description =
-          videoElement.querySelector(
-            "#dismissible > div > div.metadata-snippet-container.style-scope.ytd-video-renderer.style-scope.ytd-video-renderer > yt-formatted-string"
-          )?.textContent || "";
         const publishDate =
           videoElement.querySelector("#metadata-line > span:nth-child(4)")
             ?.textContent || "";
-        return { title, link, description, publishDate };
+        return { title, link, publishDate };
       });
     });
 
     // Store video details in a single JSON file as subobjects
+    var cleanedName = "";
+    if (searchQueriesFile === topics) {
+      cleanedName += cleanString(query, false);
+    } else {
+      // plugins
+      cleanedName += cleanString(pluginSlug, false);
+    }
+
     const combinedData = {
-      relevance: relevanceVideos,
+      relevance: removeShorts(relevanceVideos),
     };
-    const relevanceFileName = `${cleanedQuery}.json`;
+    const relevanceFileName = `${cleanedName}.json`;
     const combinedFilePath = path.join(dataFolderPath, relevanceFileName);
-    await fs.writeFile(
-      combinedFilePath,
-      JSON.stringify(combinedData, null, 2)
-    );
+    await fs.writeFile(combinedFilePath, JSON.stringify(combinedData, null, 2));
 
     console.log(`JSON file created for "${query}" videos by relevance.`);
   }
@@ -143,7 +150,9 @@ async function scrapeByRelevance(page, query, dataFolderPath, pluginSlug) {
       await Promise.race([
         page.waitForSelector("ytd-video-renderer", { timeout: 60000 }),
         // Results not found
-        page.waitForSelector(".ytd-background-promo-renderer", { timeout: 60000 }),
+        page.waitForSelector(".ytd-background-promo-renderer", {
+          timeout: 60000,
+        }),
       ]);
 
       // Check if no results are found
@@ -151,14 +160,20 @@ async function scrapeByRelevance(page, query, dataFolderPath, pluginSlug) {
       if (noResultsElement) {
         console.log("No results found. Retrying the search...");
         // Select "Last year" filter (you may need to adjust the selector)
-        await page.click('#filter-button');
+        await page.click("#filter-button");
         await page.click('#label > yt-formatted-string:has-text("This year")');
         // Manually press the search button
-        await page.click('button#search-icon-legacy');
+        await page.click("button#search-icon-legacy");
         getData(page, query, dataFolderPath, pluginSlug);
       } else {
-        getData(page, query, dataFolderPath, pluginSlug);
-        resultsFound = true; // Set the flag to true
+        // Scroll down to load more videos
+        for (let j = 0; j < 1; j++) {
+          // Adjust the number of scrolls as needed
+          await scrollDown(page);
+          await page.waitForTimeout(5000); // Wait for 2 seconds after each scroll
+          getData(page, query, dataFolderPath, pluginSlug);
+          resultsFound = true; // Set the flag to true
+        }
         break; // Exit the loop if results are found
       }
     }
@@ -171,13 +186,7 @@ async function scrapeByRelevance(page, query, dataFolderPath, pluginSlug) {
 }
 
 async function scrapeByDate(page, query, dataFolderPath, pluginSlug) {
-  var cleanedQuery = "";
-    if (searchQueriesFile === topics) {
-      cleanedQuery += cleanFileName(query);
-    } else {
-      // plugins
-      cleanedQuery += cleanFileName(pluginSlug);
-    }
+  var cleanedQuery = cleanString(query);
   const queryParams = `?search_query=${encodeURIComponent(
     cleanedQuery
   )}&sp=EgIIBQ%253D%253D`;
@@ -193,56 +202,50 @@ async function scrapeByDate(page, query, dataFolderPath, pluginSlug) {
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.88 Safari/537.36"
   );
 
-  // Scroll down to load more videos
-  for (let j = 0; j < 1; j++) { // Adjust the number of scrolls as needed
-    await scrollDown(page);
-    await page.waitForTimeout(2000); // Wait for 2 seconds after each scroll
-  }
-
   // Used multiple times below
   async function getData(page, query, dataFolderPath, pluginSlug) {
     const dateFilteredVideos = await page.evaluate(() => {
       const videoElements = Array.from(
         document.querySelectorAll("ytd-video-renderer")
       );
-      return videoElements.slice(0, 5).map((videoElement) => {
-        const title =
-          videoElement.querySelector("#video-title").textContent;
+      return videoElements.slice(0, 20).map((videoElement) => {
+        const title = videoElement.querySelector("#video-title").textContent;
         const link = videoElement
           .querySelector("#video-title")
           .getAttribute("href");
-        const description =
-          videoElement.querySelector(
-            "#dismissible > div > div.metadata-snippet-container.style-scope.ytd-video-renderer.style-scope.ytd-video-renderer > yt-formatted-string"
-          )?.textContent || "";
         const publishDate =
           videoElement.querySelector("#metadata-line > span:nth-child(4)")
             ?.textContent || "";
-        return { title, link, description, publishDate };
+        return { title, link, publishDate };
       });
     });
 
     // Load the existing JSON file for relevance-filtered data
-    const relevanceFilePath = path.join(
-      dataFolderPath,
-      `${cleanedQuery}.json`
-    );
+    var cleanedName = "";
+    if (searchQueriesFile === topics) {
+      cleanedName += cleanString(query, false);
+    } else {
+      // plugins
+      cleanedName += cleanString(pluginSlug, false);
+    }
+    const relevanceFilePath = path.join(dataFolderPath, `${cleanedName}.json`);
     const existingData = JSON.parse(
       await fs.readFile(relevanceFilePath, "utf-8")
     );
 
     // Append the date-filtered data to the existing data
-    existingData.dateFiltered = dateFilteredVideos;
+    existingData.dateFiltered = removeShorts(dateFilteredVideos);
 
     // Update the JSON file with the combined data
-    const combinedFilePath = path.join(
-      dataFolderPath,
-      `${cleanedQuery}.json`
-    );
-    await fs.writeFile(
-      combinedFilePath,
-      JSON.stringify(existingData, null, 2)
-    );
+    var cleanedQuery = "";
+    if (searchQueriesFile === topics) {
+      cleanedQuery += cleanString(query);
+    } else {
+      // plugins
+      cleanedQuery += cleanString(pluginSlug);
+    }
+    const combinedFilePath = path.join(dataFolderPath, `${cleanedQuery}.json`);
+    await fs.writeFile(combinedFilePath, JSON.stringify(existingData, null, 2));
 
     console.log(
       `JSON file updated for "${query}" videos within the past year.`
@@ -259,7 +262,9 @@ async function scrapeByDate(page, query, dataFolderPath, pluginSlug) {
       await Promise.race([
         page.waitForSelector("ytd-video-renderer", { timeout: 60000 }),
         // Results not found
-        page.waitForSelector(".ytd-background-promo-renderer", { timeout: 60000 }),
+        page.waitForSelector(".ytd-background-promo-renderer", {
+          timeout: 60000,
+        }),
       ]);
 
       // Check if no results are found
@@ -267,14 +272,20 @@ async function scrapeByDate(page, query, dataFolderPath, pluginSlug) {
       if (noResultsElement) {
         console.log("No results found. Retrying the search...");
         // Select "Last year" filter (you may need to adjust the selector)
-        await page.click('#filter-button');
+        await page.click("#filter-button");
         await page.click('#label > yt-formatted-string:has-text("This year")');
         // Manually press the search button
-        await page.click('button#search-icon-legacy');
+        await page.click("button#search-icon-legacy");
         getData(page, query, dataFolderPath, pluginSlug);
       } else {
-        getData(page, query, dataFolderPath, pluginSlug);
-        resultsFound = true; // Set the flag to true
+        // Scroll down to load more videos
+        for (let j = 0; j < 1; j++) {
+          // Adjust the number of scrolls as needed
+          await scrollDown(page);
+          await page.waitForTimeout(5000); // Wait for 2 seconds after each scroll
+          getData(page, query, dataFolderPath, pluginSlug);
+          resultsFound = true; // Set the flag to true
+        }
         break; // Exit the loop if results are found
       }
     }
@@ -287,7 +298,10 @@ async function scrapeByDate(page, query, dataFolderPath, pluginSlug) {
 }
 
 async function executeCode() {
-  const browser = await puppeteer.launch({ headless: false });
+  const browser = await puppeteer.launch({ 
+    headless: false,
+    args: ['--lang=en-US']
+  });
   const page = await browser.newPage();
 
   try {
@@ -346,28 +360,13 @@ async function executeCode() {
         pluginSlug = queriesArray[i][1].slug;
       }
 
-      // Extract index numbers to insert a longer pause
-      var endsWithZero = i%10; 
-
       // Scrape by relevance
       await scrapeByRelevance(page, query, dataFolderPath, pluginSlug);
-
-      // Introduce a delay before moving to the next query
-      if(endsWithZero === 0) { // ends with 0
-        await page.waitForTimeout(10000);
-      } else {
-        await page.waitForTimeout(4000);
-      }
+      await page.waitForTimeout(5000);
 
       // Scrape by date
       await scrapeByDate(page, query, dataFolderPath, pluginSlug);
-
-      // Introduce a delay before moving to the next query
-      if(endsWithZero === 0) { // ends with 0
-        await page.waitForTimeout(10000);
-      } else {
-        await page.waitForTimeout(5000);
-      }
+      await page.waitForTimeout(5000);
     }
   } catch (error) {
     console.error("Error:", error);
